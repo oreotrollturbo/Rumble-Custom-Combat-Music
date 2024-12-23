@@ -55,9 +55,19 @@ namespace CustomBattleMusic
             volume = mod.AddToList("Float Setting", 0.05f, "Is Float.", new Tags());
             
             mod.GetFromFile();
+            
+            mod.ModSaved += Save;
 
             UI.instance.AddMod(mod); // Use the instance-level field
             MelonLogger.Msg("Added Mod: " + BuildInfo.ModName);
+        }
+
+        private static void Save()
+        {
+            if (CurrentAudio != null)
+            {
+                CurrentAudio.Volume = (float)volume.Value;
+            }
         }
         
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
