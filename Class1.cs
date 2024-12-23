@@ -117,8 +117,19 @@ namespace CustomBattleMusic
         {
             yield return new WaitForSeconds(delay);
 
-            MelonLogger.Msg("Playing new sound");
-            PlaySoundIfFileExists(Path.Combine(folderPath, "jetpack_hellRide.mp3")); // Use Path.Combine for better path handling
+            MelonLogger.Msg("Playing new song");
+            
+            string[] mp3Files = Directory.GetFiles(folderPath, "*.mp3");
+            
+            if (mp3Files.Length == 0)
+            {
+                MelonLogger.Warning("No MP3 files found in the specified folder.");
+            }
+            
+            System.Random random = new System.Random();
+            int randomIndex = random.Next(mp3Files.Length);
+            
+            PlaySoundIfFileExists(mp3Files[randomIndex]);
         }
         
         //Everything bellow was stolen from Ulvak's mod 
@@ -130,6 +141,7 @@ namespace CustomBattleMusic
             CurrentAudio = waveOut;
             waveOut.Init((IWaveProvider)(object)reader);
             waveOut.Play();
+            
             waveOut.Volume = (float)volume.Value; 
             while ((int)waveOut.PlaybackState == 1)
             {
