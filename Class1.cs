@@ -33,6 +33,7 @@ namespace CustomBattleMusic
         private static string? _currentSceneName;
         
         private static ModSetting<float> volume; // max 1f min 0.001f
+        private static ModSetting<bool> isModEnabled;
         public override void OnLateInitializeMelon()
         {
             Calls.onMapInitialized += SceneLoaded;
@@ -52,7 +53,8 @@ namespace CustomBattleMusic
             mod.SetFolder("CustomBattleMusic");
             mod.AddDescription("Description", "", BuildInfo.Description, new Tags { IsSummary = true });
             
-            volume = mod.AddToList("Float Setting", 0.05f, "Is Float.", new Tags());
+            volume = mod.AddToList("Volume", 0.05f, "The volume at which every song will play", new Tags());
+            isModEnabled = mod.AddToList("Is mod enabled", true,1, "Enable or disable the mod", new Tags());
             
             mod.GetFromFile();
             
@@ -64,9 +66,11 @@ namespace CustomBattleMusic
 
         private static void Save()
         {
-            if (CurrentAudio != null)
+            CurrentAudio.Volume = (float)volume.Value;
+
+            if ((bool)isModEnabled.Value == false)
             {
-                CurrentAudio.Volume = (float)volume.Value;
+                CurrentAudio.Dispose();
             }
         }
         
@@ -77,6 +81,8 @@ namespace CustomBattleMusic
         
         private static void SceneLoaded() // Logic/CombatMusic
         {
+            if (!(bool)isModEnabled.Value) return;
+            
             if (CurrentAudio != null)
             {
                 CurrentAudio.Dispose();
