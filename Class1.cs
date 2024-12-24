@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using Il2CppRUMBLE.Networking.MatchFlow;
+using Il2CppRUMBLE.Players;
 using MelonLoader;
 using MelonLoader.Utils;
 using NAudio.Wave;
@@ -30,7 +31,6 @@ namespace CustomBattleMusic
         
         public static WaveOutEvent? CurrentAudio;
         public static string folderPath = MelonEnvironment.UserDataDirectory + @"\CustomBattleMusic";
-        private static string? _currentSceneName;
         
         private static ModSetting<float> volume; // max 1f min 0.001f
         private static ModSetting<bool> isModEnabled;
@@ -74,34 +74,27 @@ namespace CustomBattleMusic
             }
         }
         
-        public override void OnSceneWasLoaded(int buildIndex, string sceneName)
-        {
-            _currentSceneName = sceneName;
-        }
-        
         private static void SceneLoaded() // Logic/CombatMusic
         {
-            if (!(bool)isModEnabled.Value) return;
             
             if (CurrentAudio != null)
             {
                 CurrentAudio.Dispose();
             }
-
-            if (_currentSceneName is "Map0" or "Map1")
-            {
-                MelonLogger.Msg("Map is battle map.");
-                MelonCoroutines.Start(StartBattleMusic(6f)); // Run the coroutine properly
-            }
         }
 
-        [HarmonyLib.HarmonyPatch(typeof(MatchHandler), "ExecuteNextRound")]
+        [HarmonyLib.HarmonyPatch(typeof(MatchHandler), "ExecuteRound")]
         public static class RoundPatch
         {
-            public static void Prefix()
+            public static void Prefix(ref int roundNo)
             {
                 try
                 {
+                    if (roundNo > 0 && CurrentAudio != null)
+                    {
+                        CurrentAudio.Play();
+                    }
+                    
                     if (CurrentAudio != null)
                     {
                         CurrentAudio.Dispose();
@@ -119,8 +112,28 @@ namespace CustomBattleMusic
             }
         }
 
+        [HarmonyLib.HarmonyPatch(typeof(MatchHandler), "OnPlayerDefeated")]
+        public static class PlayerKill
+        {
+            public static void Prefix( ref Player p, ref string killDescription)
+            {
+                if (!(Calls.Scene.GetSceneName() is "Map0" or "Map1")) return;
+                
+                MelonLogger.Warning("PlayerKill trigerred");
+
+                if (CurrentAudio != null)
+                {
+                    CurrentAudio.Pause();
+                }
+            }
+        }
+
+        
+
         private static IEnumerator StartBattleMusic(float delay)
         {
+            if (!(bool)isModEnabled.Value) yield break;
+            
             yield return new WaitForSeconds(delay);
 
             MelonLogger.Msg("Playing new song");
