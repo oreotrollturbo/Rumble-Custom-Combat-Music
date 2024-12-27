@@ -3,10 +3,10 @@ using Il2CppRUMBLE.Networking.MatchFlow;
 using Il2CppRUMBLE.Players;
 using MelonLoader;
 using MelonLoader.Utils;
-using NAudio.Wave;
 using RumbleModdingAPI;
 using RumbleModUI;
 using UnityEngine;
+using UnityEngine.Playables;
 using BuildInfo = CustomBattleMusic.BuildInfo;
 
 [assembly: MelonInfo(typeof(CustomBattleMusic.Main), BuildInfo.ModName, BuildInfo.ModVersion, BuildInfo.Author)]
@@ -26,7 +26,7 @@ namespace CustomBattleMusic
     {
         private Mod mod = new Mod();
 
-        public static WaveOutEvent? CurrentAudio;
+        public static AudioManager.ClipData? CurrentAudio;
         public static string folderPath = MelonEnvironment.UserDataDirectory + @"\CustomBattleMusic";
 
         private static ModSetting<float> volume; // max 1f min 0.001f
@@ -65,11 +65,11 @@ namespace CustomBattleMusic
         {
             if (CurrentAudio == null) return;
 
-            CurrentAudio.Volume = (float)volume.Value;
+            AudioManager.ChangeVolume(CurrentAudio ,(float)volume.Value);
 
             if ((bool)isModEnabled.Value == false)
             {
-                CurrentAudio.Stop();
+                CurrentAudio.Pause();
                 CurrentAudio = null; // Always reset
                 MelonLogger.Msg("Mod disabled stopping all music");
             }
@@ -80,7 +80,7 @@ namespace CustomBattleMusic
             if (CurrentAudio != null)
             {
                 MelonLogger.Msg("New scene loaded disposing of old music object");
-                CurrentAudio.Dispose();
+                CurrentAudio.Pause();
                 CurrentAudio = null;
             }
         }
@@ -137,6 +137,7 @@ namespace CustomBattleMusic
             CurrentAudio?.Play();
         }
 
+        //Thank you to MadLike for showing me this <3
         private static IEnumerator StartBattleMusic(float delay)
         {
             if (!(bool)isModEnabled.Value) yield break;
@@ -155,46 +156,7 @@ namespace CustomBattleMusic
             System.Random random = new System.Random();
             int randomIndex = random.Next(mp3Files.Length);
 
-            PlaySoundIfFileExists(mp3Files[randomIndex]);
-        }
-
-        //Everything bellow was stolen from Ulvak's mod 
-        // https://thunderstore.io/c/rumble/p/UlvakSkillz/Rumble_Additional_Sounds/
-        private static IEnumerator PlaySound(string FilePath) //TODO make the sound loop
-        {
-            Mp3FileReader reader = new Mp3FileReader(FilePath);
-            WaveOutEvent waveOut = new WaveOutEvent();
-            waveOut.Init(reader);
-            waveOut.Volume = (float)volume.Value;
-            CurrentAudio = waveOut;
-
-            waveOut.Play();
-
-            while (waveOut.PlaybackState == PlaybackState.Playing)
-            {
-                yield return new WaitForFixedUpdate();
-            }
-
-            waveOut.Dispose();
-        }
-
-        public static void PlaySoundIfFileExists(string soundFilePath)
-        {
-            try
-            {
-                if (File.Exists(soundFilePath))
-                {
-                    MelonCoroutines.Start(PlaySound(soundFilePath)); // Pass the correct path
-                }
-                else
-                {
-                    MelonLogger.Error($"Sound file does not exist: {soundFilePath}");
-                }
-            }
-            catch (Exception e)
-            {
-                MelonLogger.Error($"Failed to play sound: {e.Message}");
-            }
+            CurrentAudio = AudioManager.PlaySoundIfFileExists(mp3Files[randomIndex]);
         }
     }
 }
