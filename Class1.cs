@@ -63,24 +63,34 @@ namespace CustomBattleMusic
 
         private static void Save()
         {
-            if (CurrentAudio == null) return;
+            if (CurrentAudio != null)
+            {
+                AudioManager.ChangeVolume(CurrentAudio, (float)volume.Value);
+
+                if (!(bool)isModEnabled.Value)
+                {
+                    AudioManager.StopPlayback(CurrentAudio);
+                    CurrentAudio = null; // Always reset
+                    MelonLogger.Msg("Mod disabled stopping all music");
+                }
+            }
 
             AudioManager.ChangeVolume(CurrentAudio ,(float)volume.Value);
 
             if ((bool)isModEnabled.Value == false)
             {
-                CurrentAudio.Pause();
+                AudioManager.StopPlayback(CurrentAudio);
                 CurrentAudio = null; // Always reset
                 MelonLogger.Msg("Mod disabled stopping all music");
             }
         }
 
-        private static void SceneLoaded() // Logic/CombatMusic
+        private static void SceneLoaded()
         {
             if (CurrentAudio != null)
             {
-                MelonLogger.Msg("New scene loaded disposing of old music object");
-                CurrentAudio.Pause();
+                MelonLogger.Msg("New scene loaded, disposing of old music object");
+                AudioManager.StopPlayback(CurrentAudio);
                 CurrentAudio = null;
             }
         }
@@ -92,14 +102,16 @@ namespace CustomBattleMusic
             {
                 try
                 {
+                    if ((bool)isModEnabled.Value == false) return;
+
                     if (roundNo > 0 && CurrentAudio != null)
                     {
-                        MelonLogger.Msg("New round started resuming music");
-                        PlayBattleMusic(2f);
+                        MelonLogger.Msg("New round started, resuming music...");
+                        MelonCoroutines.Start(PlayBattleMusic(1f)); // Adjusted to avoid instant restart
                     }
                     else if (roundNo == 0)
                     {
-                        MelonCoroutines.Start(StartBattleMusic(1f)); // Run the coroutine properly
+                        MelonCoroutines.Start(StartBattleMusic(1f)); // Start new music for the first round
                     }
 
                     var combatMusic = GameObject.Find("CombatMusic");
@@ -121,12 +133,20 @@ namespace CustomBattleMusic
         {
             public static void Prefix(Player p, string killDescription)
             {
-                if (!(Calls.Scene.GetSceneName() is "Map0" or "Map1")) return;
-
-                if (CurrentAudio != null)
+                try
                 {
-                    MelonLogger.Msg("Round ended pausing music");
-                    CurrentAudio.Pause();
+                    if (!(Calls.Scene.GetSceneName() is "Map0" or "Map1")) return;
+
+                    if (CurrentAudio != null)
+                    {
+                        MelonLogger.Msg("Round ended pausing music");
+                        AudioManager.PausePlayback(CurrentAudio);
+                    }
+                }
+                catch (Exception e)
+                {
+                    MelonLogger.Error("Player defeat crashed");
+                    MelonLogger.Error(e.Message);
                 }
             }
         }
@@ -134,13 +154,26 @@ namespace CustomBattleMusic
         private static IEnumerator PlayBattleMusic(float delay)
         {
             yield return new WaitForSeconds(delay);
-            CurrentAudio?.Play();
-        }
 
+            if (CurrentAudio != null)
+            {
+                MelonLogger.Msg("Resuming battle music...");
+                AudioManager.ResumePlayback(CurrentAudio);
+            }
+            else
+            {
+                MelonLogger.Warning("No audio to resume.");
+            }
+        }
+        
         //Thank you to MadLike for showing me this <3
         private static IEnumerator StartBattleMusic(float delay)
         {
-            if (!(bool)isModEnabled.Value) yield break;
+            if (!(bool)isModEnabled.Value)
+            {
+                MelonLogger.Msg("Mod disabled stopping");
+                yield break;
+            }
 
             yield return new WaitForSeconds(delay);
 
@@ -151,12 +184,31 @@ namespace CustomBattleMusic
             if (mp3Files.Length == 0)
             {
                 MelonLogger.Warning("No MP3 files found in the specified folder.");
+                yield break;
             }
 
+            // Stop and clean up existing music
+            if (CurrentAudio != null)
+            {
+                MelonLogger.Msg("Stopping previous audio instance...");
+                AudioManager.StopPlayback(CurrentAudio);
+                CurrentAudio = null;
+            }
+
+            // Select a new random track
             System.Random random = new System.Random();
             int randomIndex = random.Next(mp3Files.Length);
+            string audioPath = mp3Files[randomIndex];
 
-            CurrentAudio = AudioManager.PlaySoundIfFileExists(mp3Files[randomIndex]);
+            MelonLogger.Msg("Playing sound at " + audioPath);
+
+            // Assign new audio instance
+            CurrentAudio = AudioManager.PlaySoundIfFileExists(audioPath, (float)volume.Value, true);
+
+            if (CurrentAudio == null)
+            {
+                MelonLogger.Error("Failed to play sound: ClipData is null");
+            }
         }
     }
 }
