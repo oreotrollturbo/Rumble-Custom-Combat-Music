@@ -1,12 +1,12 @@
 ﻿using System.Collections;
 using Il2CppRUMBLE.Networking.MatchFlow;
 using Il2CppRUMBLE.Players;
+using Il2CppTMPro;
 using MelonLoader;
 using MelonLoader.Utils;
 using RumbleModdingAPI;
 using RumbleModUI;
 using UnityEngine;
-using UnityEngine.Playables;
 using BuildInfo = CustomBattleMusic.BuildInfo;
 
 [assembly: MelonInfo(typeof(CustomBattleMusic.Main), BuildInfo.ModName, BuildInfo.ModVersion, BuildInfo.Author)]
@@ -26,8 +26,16 @@ namespace CustomBattleMusic
     {
         private Mod mod = new Mod();
 
+        public static GameObject mp3Text;
+
         public static AudioManager.ClipData? CurrentAudio;
         public static string folderPath = MelonEnvironment.UserDataDirectory + @"\CustomBattleMusic";
+        
+        public static string[] mp3Files = Directory.GetFiles(folderPath, "*.mp3");
+
+        public static string[] playList = mp3Files;
+
+        public static string nextSong = mp3Files[0];
 
         private static ModSetting<float> volume; // max 1f min 0.001f
         private static ModSetting<bool> isModEnabled;
@@ -87,12 +95,17 @@ namespace CustomBattleMusic
 
         private static void SceneLoaded()
         {
-            if (CurrentAudio != null)
+
+            if (Calls.Scene.GetSceneName() == "Gym" && mp3Text == null)
             {
-                MelonLogger.Msg("New scene loaded, disposing of old music object");
-                AudioManager.StopPlayback(CurrentAudio);
-                CurrentAudio = null;
+                CreateMp3Player();
             }
+            
+            if (CurrentAudio == null) return;
+            
+            MelonLogger.Msg("New scene loaded, disposing of old music object");
+            AudioManager.StopPlayback(CurrentAudio);
+            CurrentAudio = null;
         }
 
         [HarmonyLib.HarmonyPatch(typeof(MatchHandler), "ExecuteRound")]
@@ -111,7 +124,7 @@ namespace CustomBattleMusic
                     }
                     else if (roundNo == 0)
                     {
-                        MelonCoroutines.Start(StartBattleMusic(1f)); // Start new music for the first round
+                        MelonCoroutines.Start(BeginBattleMusic(1f)); // Start new music for the first round
                     }
 
                     var combatMusic = GameObject.Find("CombatMusic");
@@ -143,7 +156,7 @@ namespace CustomBattleMusic
                         AudioManager.PausePlayback(CurrentAudio);
                     }
                 }
-                catch (Exception e)
+                catch (System.Exception e)
                 {
                     MelonLogger.Error("Player defeat crashed");
                     MelonLogger.Error(e.Message);
@@ -167,7 +180,7 @@ namespace CustomBattleMusic
         }
         
         //Thank you to MadLike for showing me this <3
-        private static IEnumerator StartBattleMusic(float delay)
+        private static IEnumerator BeginBattleMusic(float delay)
         {
             if (!(bool)isModEnabled.Value)
             {
@@ -178,8 +191,6 @@ namespace CustomBattleMusic
             yield return new WaitForSeconds(delay);
 
             MelonLogger.Msg("Playing new song");
-
-            string[] mp3Files = Directory.GetFiles(folderPath, "*.mp3");
 
             if (mp3Files.Length == 0)
             {
@@ -194,11 +205,10 @@ namespace CustomBattleMusic
                 AudioManager.StopPlayback(CurrentAudio);
                 CurrentAudio = null;
             }
+            
+            string audioPath = nextSong;
 
-            // Select a new random track
-            System.Random random = new System.Random();
-            int randomIndex = random.Next(mp3Files.Length);
-            string audioPath = mp3Files[randomIndex];
+            nextSong = mp3Files[Array.IndexOf(playList, nextSong) + 1];
 
             MelonLogger.Msg("Playing sound at " + audioPath);
 
@@ -209,6 +219,32 @@ namespace CustomBattleMusic
             {
                 MelonLogger.Error("Failed to play sound: ClipData is null");
             }
+        }
+
+        private static void ChangeMp3PlayerText(String text)
+        {
+            mp3Text.GetComponent<TextMeshPro>().text = text;
+        }
+
+        private static void CreateMp3Player()
+        {
+            string fileName = Path.GetFileNameWithoutExtension(nextSong);
+            
+            mp3Text = Calls.Create.NewText(fileName,3f,Color.white,new Vector3(),Quaternion.Euler(0f,0f,0f));
+            mp3Text.transform.position = new Vector3(8.0478f, 2f, 9.4449f);
+            mp3Text.name = "Mp3Player";
+            
+            
+            GameObject prevButton = Calls.Create.NewButton(mp3Text.transform.position + new Vector3(0.3f,-0.4f,0f),
+                Quaternion.Euler(90, mp3Text.transform.rotation.y - 180, 0));
+            prevButton.transform.SetParent(mp3Text.transform, true);
+            
+            GameObject nextButton = Calls.Create.NewButton(mp3Text.transform.position - new Vector3(0.3f,0.4f,0f),
+                Quaternion.Euler(90, mp3Text.transform.rotation.y  - 180, 0));
+            nextButton.transform.SetParent(mp3Text.transform, true);
+            
+            
+            mp3Text.transform.rotation = Quaternion.Euler(0, 39.3605f, 0f);
         }
     }
 }
