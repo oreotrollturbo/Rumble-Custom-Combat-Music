@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using Il2CppRUMBLE.Interactions.InteractionBase;
 using Il2CppRUMBLE.Networking.MatchFlow;
 using Il2CppRUMBLE.Players;
 using Il2CppTMPro;
@@ -36,7 +37,7 @@ namespace CustomBattleMusic
         public static string[] playList = mp3Files;
 
         public static string nextSong = mp3Files[0];
-
+        
         private static ModSetting<float> volume; // max 1f min 0.001f
         private static ModSetting<bool> isModEnabled;
         public override void OnLateInitializeMelon()
@@ -95,17 +96,48 @@ namespace CustomBattleMusic
 
         private static void SceneLoaded()
         {
+            GameObject.Destroy(mp3Text);
 
-            if (Calls.Scene.GetSceneName() == "Gym" && mp3Text == null)
+            if (Calls.Scene.GetSceneName() == "Gym")
             {
-                CreateMp3Player();
+                MelonLogger.Msg("Creating new MP3 Player");
+                CreateMp3Player(new Vector3(8.0478f, 2f, 9.4449f),Quaternion.Euler(0, 39.3605f, 0f));
             }
+            else if (Calls.Scene.GetSceneName() == "Map0")
+            {
+                Calls.onMatchEnded += RingMatchEnded;
+            }
+            
             
             if (CurrentAudio == null) return;
             
             MelonLogger.Msg("New scene loaded, disposing of old music object");
             AudioManager.StopPlayback(CurrentAudio);
             CurrentAudio = null;
+        }
+
+        private static void RingMatchEnded()
+        {
+            if (Calls.Players.IsHost())
+            {
+                CreateMp3Player(new Vector3(-0f, 2.9203f, 1.8f),Quaternion.Euler(0f,0f,0f));
+            }
+            else
+            {
+                CreateMp3Player(new Vector3(-0f, 2.9203f, -1.8f),Quaternion.Euler(0, 180f, 0));
+            }
+        }
+
+        private static void PitMatchEnded()
+        {
+            if (Calls.Players.IsHost())
+            {
+                CreateMp3Player(new Vector3(0f,0f,0f),Quaternion.Euler(0f,0f,0f));
+            }
+            else
+            {
+                CreateMp3Player(new Vector3(0f,0f,0f),Quaternion.Euler(0, 180f, 0));
+            }
         }
 
         [HarmonyLib.HarmonyPatch(typeof(MatchHandler), "ExecuteRound")]
@@ -156,13 +188,15 @@ namespace CustomBattleMusic
                         AudioManager.PausePlayback(CurrentAudio);
                     }
                 }
-                catch (System.Exception e)
+                catch (Exception e)
                 {
                     MelonLogger.Error("Player defeat crashed");
                     MelonLogger.Error(e.Message);
                 }
             }
         }
+
+        
 
         private static IEnumerator PlayBattleMusic(float delay)
         {
@@ -226,14 +260,14 @@ namespace CustomBattleMusic
             mp3Text.GetComponent<TextMeshPro>().text = text;
         }
 
-        private static void CreateMp3Player()
+        private static void CreateMp3Player(Vector3 vector,Quaternion rotation)
         {
             string fileName = Path.GetFileNameWithoutExtension(nextSong);
             
             mp3Text = Calls.Create.NewText(fileName,3f,Color.white,new Vector3(),Quaternion.Euler(0f,0f,0f));
-            mp3Text.transform.position = new Vector3(8.0478f, 2f, 9.4449f);
+            mp3Text.transform.position = vector;
             mp3Text.name = "Mp3Player";
-            
+            GameObject.DontDestroyOnLoad(mp3Text);
             
             GameObject prevButton = Calls.Create.NewButton(mp3Text.transform.position + new Vector3(0.3f,-0.4f,0f),
                 Quaternion.Euler(90, mp3Text.transform.rotation.y - 180, 0));
@@ -244,7 +278,32 @@ namespace CustomBattleMusic
             nextButton.transform.SetParent(mp3Text.transform, true);
             
             
-            mp3Text.transform.rotation = Quaternion.Euler(0, 39.3605f, 0f);
+            mp3Text.transform.rotation = rotation;
+            
+            prevButton.transform.GetChild(0).gameObject.GetComponent<InteractionButton>().onPressed.AddListener(new Action(() =>
+            {
+                SkipSongsBy(-1);
+            }));
+            
+            nextButton.transform.GetChild(0).gameObject.GetComponent<InteractionButton>().onPressed.AddListener(new Action(() =>
+            {
+                SkipSongsBy(1);
+            }));
+        }
+
+        public static void SkipSongsBy(int number)
+        {
+            int currentIndex = Array.IndexOf(playList, nextSong);
+            int newIndex = (currentIndex + number) % playList.Length;
+
+            // Handle negative indices to loop correctly
+            if (newIndex < 0)
+            {
+                newIndex += playList.Length;
+            }
+
+            nextSong = mp3Files[newIndex];
+            ChangeMp3PlayerText(Path.GetFileNameWithoutExtension(nextSong));
         }
     }
 }
