@@ -105,7 +105,7 @@ namespace CustomBattleMusic
             }
             else if (Calls.Scene.GetSceneName() == "Map0")
             {
-                Calls.onMatchEnded += RingMatchEnded;
+                Calls.onMatchEnded += RingMatchStarted;
             }
             
             
@@ -116,7 +116,7 @@ namespace CustomBattleMusic
             CurrentAudio = null;
         }
 
-        private static void RingMatchEnded()
+        private static void RingMatchStarted()
         {
             if (Calls.Players.IsHost())
             {
@@ -128,7 +128,7 @@ namespace CustomBattleMusic
             }
         }
 
-        private static void PitMatchEnded()
+        private static void PitMatchStarted()
         {
             if (Calls.Players.IsHost())
             {
@@ -196,7 +196,20 @@ namespace CustomBattleMusic
             }
         }
 
-        
+        [HarmonyLib.HarmonyPatch(typeof(MatchHandler), "InitiateRematch")] //TODO look if it works
+        public static class PlayerRematch
+        {
+            public static void Prefix()
+            {
+                MelonLogger.Msg("Rematch started deleteing mp3 player");
+                if (mp3Text != null)
+                {
+                    GameObject.Destroy(mp3Text);
+                }
+            }
+        }
+
+
 
         private static IEnumerator PlayBattleMusic(float delay)
         {
@@ -242,7 +255,10 @@ namespace CustomBattleMusic
             
             string audioPath = nextSong;
 
-            nextSong = mp3Files[Array.IndexOf(playList, nextSong) + 1];
+            int currentIndex = Array.IndexOf(playList, nextSong);
+            int newIndex = (currentIndex + 1) % playList.Length; // Loop back to first song if at the end
+
+            nextSong = playList[newIndex];
 
             MelonLogger.Msg("Playing sound at " + audioPath);
 
