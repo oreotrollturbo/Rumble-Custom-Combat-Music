@@ -50,6 +50,8 @@ namespace CustomBattleMusic
             }
 
             UI.instance.UI_Initialized += OnUIInit;
+            
+            Calls.onMatchEnded += MatchEnded;
         }
 
         public void OnUIInit()
@@ -93,21 +95,46 @@ namespace CustomBattleMusic
                 MelonLogger.Msg("Mod disabled stopping all music");
             }
         }
+        
+        private bool isOnCooldown;
+
+        public override void OnUpdate()
+        {
+            if ((double)Calls.ControllerMap.RightController.GetJoystickClick() != 1.0 || isOnCooldown)
+                return;
+            
+            if (CurrentAudio != null)
+            {
+                if (CurrentAudio.IsPaused)
+                {
+                    MelonLogger.Msg("Joystick pressed resuming music");
+                    AudioManager.ResumePlayback(CurrentAudio);
+                }
+                else
+                {
+                    MelonLogger.Msg("Joystick pressed pasuing music");
+                    AudioManager.PausePlayback(CurrentAudio);
+                }
+                
+            }
+            isOnCooldown = true;
+            MelonCoroutines.Start(StartCooldown(0));
+        }
+        
+        private IEnumerator StartCooldown(int x)
+        {
+            yield return new WaitForSeconds(0.5f);
+            isOnCooldown = false;
+        }
+
 
         private static void SceneLoaded()
         {
-            GameObject.Destroy(mp3Text);
-
             if (Calls.Scene.GetSceneName() == "Gym")
             {
                 MelonLogger.Msg("Creating new MP3 Player");
-                CreateMp3Player(new Vector3(8.0478f, 2f, 9.4449f),Quaternion.Euler(0, 39.3605f, 0f));
+                CreateMp3Player(new Vector3(8.0478f, 2f, 9.4449f),Quaternion.Euler(0, 39.3605f, 0f),true);
             }
-            else if (Calls.Scene.GetSceneName() == "Map0")
-            {
-                Calls.onMatchEnded += RingMatchStarted;
-            }
-            
             
             if (CurrentAudio == null) return;
             
@@ -116,7 +143,7 @@ namespace CustomBattleMusic
             CurrentAudio = null;
         }
 
-        private static void RingMatchStarted()
+        private static void MatchEnded()
         {
             if (Calls.Players.IsHost())
             {
@@ -125,18 +152,6 @@ namespace CustomBattleMusic
             else
             {
                 CreateMp3Player(new Vector3(-0f, 2.9203f, -1.8f),Quaternion.Euler(0, 180f, 0));
-            }
-        }
-
-        private static void PitMatchStarted()
-        {
-            if (Calls.Players.IsHost())
-            {
-                CreateMp3Player(new Vector3(0f,0f,0f),Quaternion.Euler(0f,0f,0f));
-            }
-            else
-            {
-                CreateMp3Player(new Vector3(0f,0f,0f),Quaternion.Euler(0, 180f, 0));
             }
         }
 
@@ -152,7 +167,7 @@ namespace CustomBattleMusic
                     if (roundNo > 0 && CurrentAudio != null)
                     {
                         MelonLogger.Msg("New round started, resuming music...");
-                        MelonCoroutines.Start(PlayBattleMusic(1f)); // Adjusted to avoid instant restart
+                        MelonCoroutines.Start(ResumeBattleMusic(1f)); // Adjusted to avoid instant restart
                     }
                     else if (roundNo == 0)
                     {
@@ -196,22 +211,8 @@ namespace CustomBattleMusic
             }
         }
 
-        [HarmonyLib.HarmonyPatch(typeof(MatchHandler), "InitiateRematch")] //TODO look if it works
-        public static class PlayerRematch
-        {
-            public static void Prefix()
-            {
-                MelonLogger.Msg("Rematch started deleteing mp3 player");
-                if (mp3Text != null)
-                {
-                    GameObject.Destroy(mp3Text);
-                }
-            }
-        }
-
-
-
-        private static IEnumerator PlayBattleMusic(float delay)
+        
+        private static IEnumerator ResumeBattleMusic(float delay)
         {
             yield return new WaitForSeconds(delay);
 
@@ -227,7 +228,7 @@ namespace CustomBattleMusic
         }
         
         //Thank you to MadLike for showing me this <3
-        private static IEnumerator BeginBattleMusic(float delay)
+        private static IEnumerator BeginBattleMusic(float delay, bool shouldPlayNext = true)
         {
             if (!(bool)isModEnabled.Value)
             {
@@ -252,13 +253,17 @@ namespace CustomBattleMusic
                 AudioManager.StopPlayback(CurrentAudio);
                 CurrentAudio = null;
             }
-            
+
+            // Use the current song in both cases
             string audioPath = nextSong;
 
-            int currentIndex = Array.IndexOf(playList, nextSong);
-            int newIndex = (currentIndex + 1) % playList.Length; // Loop back to first song if at the end
-
-            nextSong = playList[newIndex];
+            // Only update nextSong if shouldPlayNext is true
+            if (shouldPlayNext)
+            {
+                int currentIndex = Array.IndexOf(playList, nextSong);
+                int newIndex = (currentIndex + 1) % playList.Length; // Loop back to first song if at the end
+                nextSong = playList[newIndex];
+            }
 
             MelonLogger.Msg("Playing sound at " + audioPath);
 
@@ -276,50 +281,101 @@ namespace CustomBattleMusic
             mp3Text.GetComponent<TextMeshPro>().text = text;
         }
 
-        private static void CreateMp3Player(Vector3 vector,Quaternion rotation)
+        private static void CreateMp3Player(Vector3 vector, Quaternion rotation, bool isGym = false)
         {
             string fileName = Path.GetFileNameWithoutExtension(nextSong);
-            
-            mp3Text = Calls.Create.NewText(fileName,3f,Color.white,new Vector3(),Quaternion.Euler(0f,0f,0f));
+    
+            mp3Text = Calls.Create.NewText(fileName, 3f, Color.white, new Vector3(), Quaternion.Euler(0f, 0f, 0f));
             mp3Text.transform.position = vector;
             mp3Text.name = "Mp3Player";
-            GameObject.DontDestroyOnLoad(mp3Text);
-            
-            GameObject prevButton = Calls.Create.NewButton(mp3Text.transform.position + new Vector3(0.3f,-0.4f,0f),
+            // GameObject.DontDestroyOnLoad(mp3Text);
+    
+            // Now the prevButton uses the previous 'nextButton' position, and vice versa.
+            GameObject prevButton = Calls.Create.NewButton(
+                mp3Text.transform.position - new Vector3(0.3f, 0.4f, 0f),
                 Quaternion.Euler(90, mp3Text.transform.rotation.y - 180, 0));
             prevButton.transform.SetParent(mp3Text.transform, true);
-            
-            GameObject nextButton = Calls.Create.NewButton(mp3Text.transform.position - new Vector3(0.3f,0.4f,0f),
-                Quaternion.Euler(90, mp3Text.transform.rotation.y  - 180, 0));
+
+            GameObject nextButton = Calls.Create.NewButton(
+                mp3Text.transform.position + new Vector3(0.3f, -0.4f, 0f),
+                Quaternion.Euler(90, mp3Text.transform.rotation.y - 180, 0));
             nextButton.transform.SetParent(mp3Text.transform, true);
-            
-            
+
+            if (isGym)
+            {
+                // The preview button is now positioned half the previous vertical offset difference
+                GameObject previewButton = Calls.Create.NewButton(
+                    mp3Text.transform.position + new Vector3(0.0f, -0.6f, 0f),
+                    Quaternion.Euler(90, mp3Text.transform.rotation.y - 180, 0));
+                previewButton.transform.SetParent(mp3Text.transform, true);
+                
+                previewButton.transform.GetChild(0).gameObject.GetComponent<InteractionButton>().onPressed.AddListener(new Action(() =>
+                {
+                    MelonLogger.Msg("Preview button pressed");
+                    if (CurrentAudio == null)
+                    {
+                        MelonLogger.Msg("Starting battle music");
+                        MelonCoroutines.Start(BeginBattleMusic(0.0f, false));
+                    }
+                    else
+                    {
+                        MelonLogger.Msg("Stopping battle music");
+                        AudioManager.StopPlayback(CurrentAudio);
+                        CurrentAudio = null;
+                    }
+                }));
+                
+                
+                GameObject previewLabel = Calls.Create.NewText("Preview", 0.5f, Color.white, Vector3.zero, Quaternion.Euler(0.0f, 0.0f, 0f));
+                previewLabel.transform.position = previewButton.transform.position + new Vector3(0f, -0.1f, 0f);
+                previewLabel.transform.rotation = Quaternion.Euler(0.0f, 0.0f, 0f);
+                previewLabel.transform.SetParent(previewButton.transform, true);
+            }
+
+    
+            // Set the mp3Text rotation last so that button rotations remain unchanged
             mp3Text.transform.rotation = rotation;
-            
+    
             prevButton.transform.GetChild(0).gameObject.GetComponent<InteractionButton>().onPressed.AddListener(new Action(() =>
             {
                 SkipSongsBy(-1);
             }));
-            
+    
             nextButton.transform.GetChild(0).gameObject.GetComponent<InteractionButton>().onPressed.AddListener(new Action(() =>
             {
                 SkipSongsBy(1);
             }));
+
+            // Create text labels below each button:
+            // Adjust the offsets (here, new Vector3(0, -0.1f, 0)) as needed for your layout.
+            GameObject prevLabel = Calls.Create.NewText("Previous", 0.5f, Color.white, Vector3.zero, Quaternion.Euler(0.0f, 0.0f, 0f));
+            prevLabel.transform.position = prevButton.transform.position + new Vector3(0f, -0.1f, 0f);
+            prevLabel.transform.rotation = Quaternion.Euler(0.0f, 40.0f, 0f);
+            prevLabel.transform.SetParent(prevButton.transform, true);
+    
+            GameObject nextLabel = Calls.Create.NewText("Next", 0.5f, Color.white, Vector3.zero, Quaternion.Euler(0.0f, 0.0f, 0f));
+            nextLabel.transform.position = nextButton.transform.position + new Vector3(0f, -0.1f, 0f);
+            nextLabel.transform.rotation = Quaternion.Euler(0.0f, 40.0f, 0f);
+            nextLabel.transform.SetParent(nextButton.transform, true);
         }
+
 
         public static void SkipSongsBy(int number)
         {
-            int currentIndex = Array.IndexOf(playList, nextSong);
-            int newIndex = (currentIndex + number) % playList.Length;
-
-            // Handle negative indices to loop correctly
-            if (newIndex < 0)
+            if (mp3Text == null)
             {
-                newIndex += playList.Length;
+                MelonLogger.Error("Cannot skip songs because mp3Text is null.");
+                return;
             }
 
-            nextSong = mp3Files[newIndex];
-            ChangeMp3PlayerText(Path.GetFileNameWithoutExtension(nextSong));
+            int currentIndex = Array.IndexOf(playList, nextSong);
+            if (currentIndex == -1) return;
+
+            int newIndex = (currentIndex + number) % playList.Length;
+            if (newIndex < 0) newIndex += playList.Length; // Ensure valid index
+
+            nextSong = playList[newIndex];
+            ChangeMp3PlayerText(Path.GetFileNameWithoutExtension(nextSong)); // Avoid crash if mp3Text is missing
         }
     }
 }
