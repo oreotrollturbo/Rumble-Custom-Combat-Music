@@ -28,18 +28,16 @@ namespace CustomBattleMusic
         private Mod mod = new Mod();
 
         public static GameObject mp3Text;
-
         public static AudioManager.ClipData? CurrentAudio;
         public static string folderPath = MelonEnvironment.UserDataDirectory + @"\CustomBattleMusic";
-        
         public static string[] mp3Files = Directory.GetFiles(folderPath, "*.mp3");
-
         public static string[] playList = mp3Files;
-
-        public static string nextSong = mp3Files[0];
+        public static string nextSong;
         
         private static ModSetting<float> volume; // max 1f min 0.001f
         private static ModSetting<bool> isModEnabled;
+        private static ModSetting<bool> shouldPauseOnRoundEnd;
+        private static ModSetting<bool> shouldShuffle;
         public override void OnLateInitializeMelon()
         {
             Calls.onMapInitialized += SceneLoaded;
@@ -62,7 +60,14 @@ namespace CustomBattleMusic
             mod.AddDescription("Description", "", BuildInfo.Description, new Tags { IsSummary = true });
 
             volume = mod.AddToList("Volume", 0.05f, "The volume at which every song will play", new Tags());
+            
             isModEnabled = mod.AddToList("Is mod enabled", true, 1, "Enable or disable the mod", new Tags());
+            
+            shouldPauseOnRoundEnd = mod.AddToList("Should pause on round end", true, 1, 
+                "Make sure the mod does/doesn't pause the music on round end", new Tags());
+            
+            shouldShuffle = mod.AddToList("Should shuffle playlist", true, 1, 
+                "Make a shuffled playlist of leave the default one", new Tags());
 
             mod.GetFromFile();
 
@@ -70,6 +75,13 @@ namespace CustomBattleMusic
 
             UI.instance.AddMod(mod); // Use the instance-level field
             MelonLogger.Msg("Added Mod: " + BuildInfo.ModName);
+
+            if ((bool)shouldShuffle.Value)
+            {
+                playList = Shuffle(playList);
+            }
+            
+            nextSong = playList[0];
         }
 
         private static void Save()
@@ -94,34 +106,78 @@ namespace CustomBattleMusic
                 CurrentAudio = null; // Always reset
                 MelonLogger.Msg("Mod disabled stopping all music");
             }
+
+            if ((bool)shouldShuffle.Value)
+            {
+                playList = Shuffle(playList);
+            }
+            else
+            {
+                playList = mp3Files;
+            }
         }
         
         private bool isOnCooldown;
+        private static float cooldownTime = 0.5f;
+        
+        private static DateTime lastPressedRight;
+        private static DateTime lastPressedLeft;
+        private static float maxDoublePressTime = 0.5f + cooldownTime;
 
         public override void OnUpdate()
         {
-            if ((double)Calls.ControllerMap.RightController.GetJoystickClick() != 1.0 || isOnCooldown)
-                return;
-            
-            if (CurrentAudio != null)
+            // Handle right joystick
+            if ((double)Calls.ControllerMap.RightController.GetJoystickClick() == 1.0 && !isOnCooldown)
             {
-                if (CurrentAudio.IsPaused)
+                if ((DateTime.Now - lastPressedRight).TotalSeconds < maxDoublePressTime)
                 {
-                    MelonLogger.Msg("Joystick pressed resuming music");
-                    AudioManager.ResumePlayback(CurrentAudio);
+                    // Double tap detected - skip forward
+                    MelonLogger.Msg("Right joystick double-tap - skipping forward");
+                    SkipSongsBy(1);
+                    isOnCooldown = true;
+                    MelonCoroutines.Start(StartCooldown());
                 }
                 else
                 {
-                    MelonLogger.Msg("Joystick pressed pasuing music");
-                    AudioManager.PausePlayback(CurrentAudio);
+                    // Single tap - pause/resume
+                    if (CurrentAudio != null)
+                    {
+                        if (CurrentAudio.IsPaused)
+                        {
+                            MelonLogger.Msg("Right joystick pressed - resuming music");
+                            AudioManager.ResumePlayback(CurrentAudio);
+                        }
+                        else
+                        {
+                            MelonLogger.Msg("Right joystick pressed - pausing music");
+                            AudioManager.PausePlayback(CurrentAudio);
+                        }
+                    }
+                    isOnCooldown = true;
+                    MelonCoroutines.Start(StartCooldown());
                 }
-                
+                lastPressedRight = DateTime.Now;
             }
-            isOnCooldown = true;
-            MelonCoroutines.Start(StartCooldown(0));
+
+            // Handle left joystick
+            if ((double)Calls.ControllerMap.LeftController.GetJoystickClick() == 1.0 && !isOnCooldown)
+            {
+                if ((DateTime.Now - lastPressedLeft).TotalSeconds < maxDoublePressTime)
+                {
+                    // Double tap detected - skip backward
+                    MelonLogger.Msg("Left joystick double-tap - skipping backward");
+                    SkipSongsBy(-1);
+                    isOnCooldown = true;
+                    MelonCoroutines.Start(StartCooldown());
+                }
+                // Left joystick single tap does nothing (or could add different functionality)
+                isOnCooldown = true;
+                MelonCoroutines.Start(StartCooldown());
+                lastPressedLeft = DateTime.Now;
+            }
         }
         
-        private IEnumerator StartCooldown(int x)
+        private IEnumerator StartCooldown()
         {
             yield return new WaitForSeconds(0.5f);
             isOnCooldown = false;
@@ -134,6 +190,11 @@ namespace CustomBattleMusic
             {
                 MelonLogger.Msg("Creating new MP3 Player");
                 CreateMp3Player(new Vector3(8.0478f, 2f, 9.4449f),Quaternion.Euler(0, 39.3605f, 0f),true);
+            }
+            else if (Calls.Scene.GetSceneName() == "Park")
+            {
+                MelonLogger.Msg("Creating new MP3 Player");
+                CreateMp3Player(new Vector3(-15.5555f, -4.5763f, -4.6272f),Quaternion.Euler(0.631f, 216.8802f, -0f),true);
             }
             
             if (CurrentAudio == null) return;
@@ -164,7 +225,7 @@ namespace CustomBattleMusic
                 {
                     if ((bool)isModEnabled.Value == false) return;
 
-                    if (roundNo > 0 && CurrentAudio != null)
+                    if (roundNo > 0 && CurrentAudio != null && (bool)shouldPauseOnRoundEnd.Value)
                     {
                         MelonLogger.Msg("New round started, resuming music...");
                         MelonCoroutines.Start(ResumeBattleMusic(1f)); // Adjusted to avoid instant restart
@@ -195,7 +256,7 @@ namespace CustomBattleMusic
             {
                 try
                 {
-                    if (!(Calls.Scene.GetSceneName() is "Map0" or "Map1")) return;
+                    if (!(Calls.Scene.GetSceneName() is "Map0" or "Map1") || (bool)shouldPauseOnRoundEnd.Value) return;
 
                     if (CurrentAudio != null)
                     {
@@ -376,6 +437,23 @@ namespace CustomBattleMusic
 
             nextSong = playList[newIndex];
             ChangeMp3PlayerText(Path.GetFileNameWithoutExtension(nextSong)); // Avoid crash if mp3Text is missing
+        }
+        
+        public static string[] Shuffle(string[] array)
+        {
+            System.Random rng = new System.Random();
+            int n = array.Length;
+
+            while (n > 1)
+            {
+                n--;
+                int k = rng.Next(n + 1);
+                string value = array[k];
+                array[k] = array[n];
+                array[n] = value;
+            }
+            
+            return array;
         }
     }
 }

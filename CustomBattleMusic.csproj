@@ -28,9 +28,6 @@
       <Reference Include="ModUI">
         <HintPath>..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\RUMBLE\Mods\ModUI.dll</HintPath>
       </Reference>
-      <Reference Include="RumbleAdditionalSounds">
-        <HintPath>..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\RUMBLE\Mods\RumbleAdditionalSounds.dll</HintPath>
-      </Reference>
       <Reference Include="RumbleModdingAPI">
         <HintPath>..\..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\RUMBLE\Mods\RumbleModdingAPI.dll</HintPath>
       </Reference>
